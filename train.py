@@ -12,6 +12,7 @@ from transformers import (
     HfArgumentParser,
     BitsAndBytesConfig,
 )
+from transformers.trainer_utils import get_last_checkpoint
 from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
 
 disable_caching()
@@ -37,6 +38,7 @@ class SFTTrainingArguments:
     peft_lora_r: int = 8
     peft_lora_alpha: int = 32
     peft_lora_dropout: float = 0.05
+    resume_from_latest_checkpoint: bool = False
 
     def __post_init__(self):
         if self.load_in_8bit and self.load_in_4bit:
@@ -163,6 +165,16 @@ def main() -> None:
             model.gradient_checkpointing_enable()
             model.enable_input_require_grads()
 
+    if sft_training_args.resume_from_latest_checkpoint:
+        logger.info("Resuming from the latest checkpoint")
+        latest_checkpoint = get_last_checkpoint(training_args.output_dir)
+        if latest_checkpoint is not None:
+            logger.info(f"Loading model from {latest_checkpoint}")
+        else:
+            logger.info("No checkpoint found")
+    else:
+        latest_checkpoint = None
+
     logger.info("Setting up trainer")
     trainer = SFTTrainer(
         model,
@@ -177,7 +189,10 @@ def main() -> None:
     )
 
     logger.info("Training")
-    trainer.train()
+    if latest_checkpoint:
+        trainer.train(resume_from_checkpoint=latest_checkpoint)
+    else:
+        trainer.train()
 
     logger.info("Saving model")
     trainer.save_model()
